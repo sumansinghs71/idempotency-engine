@@ -1,0 +1,248 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "IdemEngine — POST /charges",
+    "description": "Validates the Stripe-style idempotency contract end-to-end.\n\n**Order matters.** Run the requests top-to-bottom; the pre-request scripts on Happy Path generate a fresh key and stash it as a collection variable, which later requests reuse for replay / mismatch tests.\n\n**Setup before running:**\n1. App is running on the URL in the `base_url` variable (default http://localhost:8080).\n2. Seed a user; put its id in the `user_id` variable.\n\nSee scripts/smoke-test.sh for a curl equivalent.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 — Health check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/actuator/health",
+          "host": ["{{base_url}}"],
+          "path": ["actuator", "health"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "pm.test('status is UP', () => {",
+              "  pm.expect(pm.response.json().status).to.eql('UP');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Happy path (201)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Generate a fresh idempotency key and remember it for the next requests.",
+              "const uuid = require('uuid');",
+              "const key = uuid.v4 ? uuid.v4() : (function genUuid() {",
+              "  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+              "    const r = Math.random()*16|0, v = c==='x' ? r : (r&0x3|0x8); return v.toString(16);",
+              "  });",
+              "})();",
+              "pm.collectionVariables.set('happy_key', key);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('status field = succeeded', () => pm.expect(body.status).to.eql('succeeded'));",
+              "pm.test('has charge_id starting with ch_', () => pm.expect(body.charge_id).to.match(/^ch_/));",
+              "pm.test('echoes amount', () => pm.expect(body.amount).to.eql(2000));",
+              "// Remember the body so the replay test can byte-compare.",
+              "pm.collectionVariables.set('happy_response_body', pm.response.text());",
+              "pm.collectionVariables.set('happy_charge_id', body.charge_id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "X-User-Id", "value": "{{user_id}}"},
+          {"key": "Idempotency-Key", "value": "{{happy_key}}"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"amount\":2000,\"currency\":\"usd\",\"customer_id\":\"cus_alice\"}"
+        },
+        "url": {
+          "raw": "{{base_url}}/charges",
+          "host": ["{{base_url}}"],
+          "path": ["charges"]
+        }
+      }
+    },
+    {
+      "name": "02 — Replay same key + same body → cached 201",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201', () => pm.response.to.have.status(201));",
+              "pm.test('body matches original byte-for-byte', () => {",
+              "  pm.expect(pm.response.text()).to.eql(pm.collectionVariables.get('happy_response_body'));",
+              "});",
+              "pm.test('charge_id is the SAME (proves no second PSP call)', () => {",
+              "  pm.expect(pm.response.json().charge_id).to.eql(pm.collectionVariables.get('happy_charge_id'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "X-User-Id", "value": "{{user_id}}"},
+          {"key": "Idempotency-Key", "value": "{{happy_key}}"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"amount\":2000,\"currency\":\"usd\",\"customer_id\":\"cus_alice\"}"
+        },
+        "url": {
+          "raw": "{{base_url}}/charges",
+          "host": ["{{base_url}}"],
+          "path": ["charges"]
+        }
+      }
+    },
+    {
+      "name": "03 — Same key, different body → 422",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 422', () => pm.response.to.have.status(422));",
+              "pm.test('error code is body_mismatch', () => {",
+              "  pm.expect(pm.response.json().error).to.eql('idempotency_key_body_mismatch');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "X-User-Id", "value": "{{user_id}}"},
+          {"key": "Idempotency-Key", "value": "{{happy_key}}"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"amount\":9999,\"currency\":\"usd\",\"customer_id\":\"cus_alice\"}"
+        },
+        "url": {
+          "raw": "{{base_url}}/charges",
+          "host": ["{{base_url}}"],
+          "path": ["charges"]
+        }
+      }
+    },
+    {
+      "name": "04 — Missing Idempotency-Key → 400",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 400', () => pm.response.to.have.status(400));",
+              "pm.test('error code is idempotency_key_required', () => {",
+              "  pm.expect(pm.response.json().error).to.eql('idempotency_key_required');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "X-User-Id", "value": "{{user_id}}"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"amount\":2000,\"currency\":\"usd\",\"customer_id\":\"cus_alice\"}"
+        },
+        "url": {
+          "raw": "{{base_url}}/charges",
+          "host": ["{{base_url}}"],
+          "path": ["charges"]
+        }
+      }
+    },
+    {
+      "name": "05 — Fresh key, fresh charge → 201 with new charge_id",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const key = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+              "  const r = Math.random()*16|0, v = c==='x' ? r : (r&0x3|0x8); return v.toString(16);",
+              "});",
+              "pm.collectionVariables.set('fresh_key', key);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201', () => pm.response.to.have.status(201));",
+              "pm.test('charge_id is DIFFERENT from happy path (new charge)', () => {",
+              "  pm.expect(pm.response.json().charge_id).to.not.eql(pm.collectionVariables.get('happy_charge_id'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "X-User-Id", "value": "{{user_id}}"},
+          {"key": "Idempotency-Key", "value": "{{fresh_key}}"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"amount\":2000,\"currency\":\"usd\",\"customer_id\":\"cus_alice\"}"
+        },
+        "url": {
+          "raw": "{{base_url}}/charges",
+          "host": ["{{base_url}}"],
+          "path": ["charges"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {"key": "base_url", "value": "http://localhost:8080"},
+    {"key": "user_id", "value": "1"},
+    {"key": "happy_key", "value": ""},
+    {"key": "happy_response_body", "value": ""},
+    {"key": "happy_charge_id", "value": ""},
+    {"key": "fresh_key", "value": ""}
+  ]
+}

@@ -1,0 +1,69 @@
+# =============================================================================
+# IdemEngine — local dev infrastructure
+# =============================================================================
+# Postgres 15 + Toxiproxy (for chaos tests).
+# Bring up:  docker compose up -d
+# Tear down: docker compose down -v
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: idem-postgres
+    environment:
+      POSTGRES_DB: idempotency
+      POSTGRES_USER: idem
+      POSTGRES_PASSWORD: idem
+    ports:
+      - "5432:5432"
+    volumes:
+      - idem-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U idem -d idempotency"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  # Toxiproxy sits between the app and a fake PSP so chaos tests can
+  # inject network failures (timeouts, resets, latency).
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    container_name: idem-toxiproxy
+    ports:
+      - "8474:8474"  # admin
+      - "8666:8666"  # the proxied PSP port
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./infra/toxiproxy.json:/config/toxiproxy.json:ro
+
+  # Prometheus scrapes /actuator/prometheus on the host every 5s.
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: idem-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      # Lets the container resolve host.docker.internal on Linux too.
+      - "host.docker.internal:host-gateway"
+
+  # Grafana with the IdemEngine dashboard auto-provisioned. http://localhost:3000 (admin/admin).
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: idem-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  idem-pgdata:

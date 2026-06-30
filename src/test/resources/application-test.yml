@@ -1,0 +1,20 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+idempotency:
+  ttl: PT24H
+  lock-staleness: PT2S        # short for tests
+  max-key-length: 100
+
+psp:
+  base-url: http://localhost:9999
+  timeout-ms: 5000
+  fake-latency-ms: 0
+
+logging:
+  level:
+    com.yourname.idempotency: DEBUG

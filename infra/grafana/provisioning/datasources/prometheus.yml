@@ -1,0 +1,12 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    # Stable UID — must match the "uid": "prometheus" reference in
+    # infra/grafana/dashboards/idem.json. Without this, Grafana
+    # auto-generates a UID and dashboard panels show "No data".
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

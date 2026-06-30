@@ -1,0 +1,165 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate by state (req/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (state) (rate(idem_requests_total[1m]))",
+          "legendFormat": "{{state}}",
+          "refId": "A"
+        }
+      ],
+      "options": {"legend": {"displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "stacking": {"mode": "normal"}}}}
+    },
+    {
+      "id": 2,
+      "title": "Cache hit ratio (5m)",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "100 * sum(rate(idem_cache_hits_total[5m])) / clamp_min(sum(rate(idem_requests_total[5m])), 0.0001)",
+          "refId": "A"
+        }
+      ],
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 70}, {"color": "red", "value": 90}]}}}
+    },
+    {
+      "id": 3,
+      "title": "Body mismatches (422) — should be ~0",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(idem_body_mismatch_total[5m]))", "refId": "A"}
+      ],
+      "options": {"colorMode": "background", "reduceOptions": {"calcs": ["lastNotNull"]}},
+      "fieldConfig": {"defaults": {"unit": "reqps", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 0.01}, {"color": "red", "value": 0.5}]}}}
+    },
+    {
+      "id": 4,
+      "title": "Recovery events by from_state (should be ~0 in steady state)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (from_state) (rate(idem_recovery_total[5m]))",
+          "legendFormat": "from {{from_state}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps"}}
+    },
+    {
+      "id": 5,
+      "title": "PSP call latency — avg by outcome",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(idem_external_call_duration_seconds_sum[5m])) / clamp_min(sum by (outcome) (rate(idem_external_call_duration_seconds_count[5m])), 0.0001)",
+          "legendFormat": "{{outcome}} avg",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (outcome, le) (rate(idem_external_call_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{outcome}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (outcome, le) (rate(idem_external_call_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{outcome}} p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 6,
+      "title": "Lock wait duration — p95 / p99",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "rate(idem_lock_wait_duration_seconds_sum[5m]) / clamp_min(rate(idem_lock_wait_duration_seconds_count[5m]), 0.0001)",
+          "legendFormat": "avg",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(idem_lock_wait_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(idem_lock_wait_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 7,
+      "title": "Reaper — rows deleted per hour",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "increase(idem_reaper_rows_deleted_total[1h])", "legendFormat": "rows/hr", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "id": 8,
+      "title": "JVM heap used",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "heap", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes"}}
+    },
+    {
+      "id": 9,
+      "title": "Hikari pool active connections",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "hikaricp_connections_active", "legendFormat": "active", "refId": "A"},
+        {"expr": "hikaricp_connections_idle", "legendFormat": "idle", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["idem", "idempotency"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "IdemEngine",
+  "uid": "idem-engine",
+  "version": 1,
+  "weekStart": ""
+}
