@@ -1,0 +1,22 @@
+# gitleaks configuration for idempotency-engine.
+#
+# The default `generic-api-key` rule fires on `Idempotency-Key: <uuid>` in documented HTTP
+# examples. An idempotency key is a caller-supplied, non-secret request identifier - it is the
+# subject of this repository, appears in every API example, and is meant to be visible.
+#
+# Allowlisted by REGEX on that specific header rather than by disabling the rule or ignoring the
+# files: a real credential in the same document must still be caught.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Idempotency-Key header values in documentation and examples"
+regexTarget = "line"
+regexes = [
+  '''(?i)idempotency[-_]key["'\s:=]+[A-Za-z0-9._~-]+''',
+]
+paths = [
+  '''^build/''',
+  '''^\.gradle/''',
+]

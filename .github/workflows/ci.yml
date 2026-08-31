@@ -52,3 +52,20 @@ jobs:
             build/reports/tests/test
             build/test-results/test
           if-no-files-found: warn
+
+  secret-scan:
+    name: Secret scan — GATE
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Full history, not just the tree. The repository's own gitleaks config allowlists the
+      # Idempotency-Key header by regex, because that is a caller-supplied request identifier and
+      # the subject of this project - not a credential. A real credential in the same document
+      # still fails the build.
+      - name: gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks detect --source . --config .gitleaks.toml --redact --verbose
