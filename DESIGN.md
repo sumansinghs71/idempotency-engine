@@ -232,16 +232,23 @@ Mapped to RESEARCH.md §5, with the test that proves each in Phase 8.
 
 | # | Where | Mechanism that recovers it | Test |
 |---|---|---|---|
-| F1 | Client → server before tx1 begins | No state to recover; client retries; tx1 runs cleanly. | `testHappyPath` (degenerate) |
-| F2 | Mid-tx1 (between INSERT and COMMIT) | tx1 rolls back atomically; no row; client retry creates it. | `testCrashDuringTx1Recovers` |
-| F3 | Between tx1 commit and tx2 begin | `started` row exists, locked. On retry: `locked_at` stale → reclaim → resume at `started`. | `testCrashBetweenTxRecovers` (started variant) |
-| F4 | Mid-tx2 | tx2 rolls back; row still at `started`. Retry resumes from `started`. No partial ride row (rolled back). | `testCrashMidTx2RollsBackRide` |
-| F5 | Mid-PSP call (network timeout) | tx3 never opened; row at `customer_validated`. Retry calls PSP again with same derived key — PSP returns same charge_id. | `testCrashDuringExternalApiCallNoDoubleCharge` |
-| F6 | After PSP 200, before tx3 commit | Row at `customer_validated`; retry calls PSP again with derived key → PSP cache hit → same charge_id → tx3 commits. **This is the critical case.** | `testCrashAfterPspBeforeCommit` |
-| F7 | Mid-tx4 (between staging job and response cache) | tx4 rolls back atomically; row at `external_api_called` with `stripe_charge_id` persisted. Retry resumes at `external_api_called`; no PSP call needed; stages job idempotently (the staged_jobs INSERT carries `(idempotency_key_id, kind)` UNIQUE so re-INSERT is a no-op via ON CONFLICT DO NOTHING). | `testCrashMidTx4Recovers` |
-| F8 | After tx4 commits, before HTTP response reaches client | Row at `finished` with cached body. Retry hits `finished` → returns cached body. | `testCrashAfterFinishedBeforeResponse` |
+| F1 | Duplicate lands before the original has done any work | Original holds a fresh `locked_at`; duplicate gets 409 and creates nothing. Converges once the lock goes stale. | `f1_duplicateBeforeProcessing` |
+| F2 | Duplicate lands while the original is in flight, after tx2 | Same live-lock rejection one state further into the DAG; the pending ride is not duplicated. | `f2_duplicateWhileInFlight` |
+| F3 | PSP succeeded, then our tx3 commit failed | tx3 rolls back so the recovery point never advances; `releaseLockOnError` unlocks; retry re-issues with the same derived key and the PSP deduplicates. | `f3_pspSuccessThenDbCommitFailure` |
+| F4 | After tx4 commits, before the response reaches the client | Row at `finished` with the cached body; the retry replays it byte for byte with no PSP call. | `f4_dbSuccessThenResponseLost` |
+| F5 | Crash after tx2, before the PSP call | Stale lock reclaimed; resume from `customer_validated`; the PSP is called exactly once, ever. | `f5_crashBeforePsp` |
+| F6 | Crash after PSP 200, before tx3 commit. **The critical case.** | The derived key is reconstructible from the durable row id, so the retry gets a PSP cache hit and recovers the same `charge_id`. | `f6_crashAfterPsp` |
+| F7 | PSP call times out — we cannot tell whether the card was charged | No recovery point is committed for an outcome never observed. The retry resolves the ambiguity via the derived key. Tested from both sides. | `f7a_ambiguousTimeout_pspDidCharge`, `f7b_ambiguousTimeout_pspDidNotCharge` |
+| F8 | Duplicate lands after the application restarted | All durable state is in Postgres; a separate application context serves the replay with zero PSP calls. | `f8_duplicateDeliveryAfterRestart` |
 
-Total: 8 distinct failure modes; each maps to a transaction boundary or a network boundary. Every one ends with: customer charged exactly once, response identical on retry.
+All eight live in `src/test/java/io/github/sumansinghs71/idempotency/failure/FailureModeTest.java`.
+README §6 is the canonical claim-to-test map; this table exists to tie each
+failure point back to the transaction or network boundary it sits on.
+
+Total: 8 distinct failure points; each maps to a transaction boundary or a
+network boundary. Every one ends with: the customer charged **at most once**,
+and the response identical on every retry. ("At most once", not "exactly once" —
+delivery is at-least-once and handling is idempotent; see README §1.)
 
 ## 6. Process layout (single instance)
 

@@ -1,8 +1,10 @@
 # =============================================================================
 # IdemEngine — local dev infrastructure
 # =============================================================================
-# Postgres 15 + Toxiproxy (for chaos tests).
-# Bring up:  docker compose up -d
+# Postgres 15 + Toxiproxy + Prometheus + Grafana.
+# The quickstart needs `postgres` alone; the other three are the optional
+# observability stack.
+# Bring up:  docker compose up -d postgres   (or `docker compose up -d` for all)
 # Tear down: docker compose down -v
 # =============================================================================
 
@@ -11,15 +13,23 @@ services:
     image: postgres:15-alpine
     container_name: idem-postgres
     environment:
-      POSTGRES_DB: idempotency
-      POSTGRES_USER: idem
-      POSTGRES_PASSWORD: idem
+      # Defaults match the defaults in src/main/resources/application.yml, so a
+      # bare `docker compose up -d` produces exactly the database the app expects.
+      POSTGRES_DB: ${POSTGRES_DB:-idempotency}
+      POSTGRES_USER: ${POSTGRES_USER:-idem}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-idem}
     ports:
-      - "5432:5432"
+      # Published on 5433, not 5432, deliberately: 5432 is very often already
+      # taken by a natively-installed Postgres, and when it is, the app connects
+      # to that server instead and fails with `FATAL: role "idem" does not
+      # exist`. Publishing on a non-default port removes the ambiguity entirely.
+      # application.yml's default DB_URL points at 5433 to match. Override both
+      # with POSTGRES_PORT and DB_URL if 5433 is taken too.
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - idem-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U idem -d idempotency"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-idem} -d ${POSTGRES_DB:-idempotency}"]
       interval: 2s
       timeout: 5s
       retries: 20

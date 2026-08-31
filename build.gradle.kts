@@ -16,7 +16,7 @@ plugins {
     id("me.champeau.jmh") version "0.7.2"
 }
 
-group = "com.yourname"
+group = "io.github.sumansinghs71"
 version = "0.1.0"
 
 java {
@@ -62,6 +62,15 @@ dependencies {
     jmhAnnotationProcessor("org.openjdk.jmh:jmh-generator-annprocess:1.37")
 }
 
+// `./gradlew bootRun` is the local quickstart, so it defaults to the `dev`
+// profile. That profile adds classpath:db/seed to spring.flyway.locations, which
+// is what puts the demo fixtures behind Flyway's afterMigrate callback rather
+// than behind a psql invocation that can run before the schema exists. Set
+// SPRING_PROFILES_ACTIVE to run bootRun under any other profile.
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+    systemProperty("spring.profiles.active", System.getenv("SPRING_PROFILES_ACTIVE") ?: "dev")
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
     // Chaos tests are slow; keep parallel off by default.
@@ -70,29 +79,27 @@ tasks.withType<Test> {
         events("passed", "skipped", "failed")
         showStandardStreams = false
     }
-    // Enable Java preview features at test runtime (required for pattern matching in switch)
-    // This adds --enable-preview to the JVM that runs tests.
-    jvmArgs = listOf("--enable-preview")
 }
 
-// Ensure Java compilation uses --enable-preview so preview language features (pattern matching in switch)
-// are accepted by the compiler. Also set release to 17 to match the toolchain.
+// No --enable-preview anywhere, deliberately. It used to be here for pattern
+// matching in switch, which is still preview on Java 17. Preview class files
+// are stamped with the exact JDK build that produced them (version 61.65535)
+// and every consuming JVM must opt in individually — the JMH bytecode
+// generator forks its own JVM and does not, so `./gradlew jmh` failed with
+// UnsupportedClassVersionError. IdempotencyService now uses `instanceof`
+// patterns, final since Java 16, and the flag is gone from every task.
 tasks.withType<JavaCompile> {
     options.release.set(17)
-    options.compilerArgs.add("--enable-preview")
-}
-
-// Ensure any JavaExec tasks (bootRun, custom run tasks) run with --enable-preview
-tasks.withType<org.gradle.api.tasks.JavaExec> {
-    jvmArgs = listOf("--enable-preview")
 }
 
 // Configure JMH tasks to use preview flags too
 jmh {
-    // Conservative defaults; override on the CLI.
-    warmupIterations.set(2)
-    iterations.set(3)
-    fork.set(1)
+    // Enough iterations that the reported error bar means something. With the
+    // previous 2/3 the confidence interval on uniqueKeyPath was wider than its
+    // own mean, which is not a measurement.
+    warmupIterations.set(5)
+    iterations.set(10)
+    fork.set(2)
     timeUnit.set("ms")
     benchmarkMode.set(listOf("thrpt", "avgt"))
     resultFormat.set("JSON")
@@ -103,6 +110,4 @@ jmh {
 tasks.withType<JMHTask> {
     // Make the bench actually use the project classpath including main.
     dependsOn("compileJava")
-    // Run JMH worker JVMs with preview enabled
-    jvmArgs = listOf("--enable-preview")
 }

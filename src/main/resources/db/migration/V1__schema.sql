@@ -36,6 +36,11 @@ CREATE TABLE users (
 --                          recorded for debugging.
 --   request_params_hash    SHA-256 hex of the canonicalized request body. We
 --                          compare hashes (not bodies) for the 422 check.
+--                          VARCHAR(64), not CHAR(64): CHAR is blank-padded in
+--                          Postgres and reports itself as `bpchar`, which does
+--                          not match the JPA mapping (`length = 64` -> varchar)
+--                          and fails `ddl-auto: validate`. The digest is always
+--                          exactly 64 hex chars, so VARCHAR loses nothing.
 --   request_body           Full JSONB body. Stored for debugging and to allow
 --                          a completer process to replay abandoned requests.
 --   response_code          HTTP status of the final response. NULL until
@@ -68,7 +73,7 @@ CREATE TABLE idempotency_keys (
                                       REFERENCES users(id) ON DELETE RESTRICT,
     request_method       VARCHAR(10)  NOT NULL,
     request_path         VARCHAR(255) NOT NULL,
-    request_params_hash  CHAR(64)     NOT NULL,
+    request_params_hash  VARCHAR(64)  NOT NULL,
     request_body         JSONB        NOT NULL,
     response_code        INT,
     response_body        JSONB,

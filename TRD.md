@@ -36,7 +36,7 @@ Cites: [Brandur §"The idempotency key relation"](https://brandur.org/idempotenc
 `UNIQUE (user_id, key)`, not `UNIQUE (key)`.
 
 - **Bug prevented:** two merchants generating the string `"abc"` (or worse, a UUID collision across tenants — vanishingly rare but the code shouldn't depend on it) do not collide.
-- **Security implication:** a leaked idempotency key cannot be replayed by a different authenticated principal. The header alone doesn't authenticate anything; the `(user_id, key)` lookup combines the authenticated principal with the key, so the worst case of a leaked key is "the owner's own request gets replayed", which is the same as the owner retrying — i.e., the design's normal happy path.
+- **Security implication** (assuming a real authenticated principal; this implementation ships only the unverified `X-User-Id` demo shim, see README §7): a leaked idempotency key cannot be replayed by a different authenticated principal. The header alone doesn't authenticate anything; the `(user_id, key)` lookup combines the authenticated principal with the key, so the worst case of a leaked key is "the owner's own request gets replayed", which is the same as the owner retrying — i.e., the design's normal happy path.
 
 Brandur calls this out explicitly: "We've made `idempotency_key` unique, but across `(user_id, idempotency_key)` so that it's possible to have the same idempotency key for different requests as long as it's across different user accounts."
 

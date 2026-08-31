@@ -3,7 +3,7 @@
 -- Run after the smoke test / Postman collection to verify state-machine state.
 --
 -- Usage:
---   PGPASSWORD='...' psql -U idem_app -d vector_store_idem -h localhost -f scripts/inspect.sql
+--   PGPASSWORD=idem psql -U idem -d idempotency -h localhost -f scripts/inspect.sql
 -- or interactively:
 --   psql ...
 --   \i scripts/inspect.sql

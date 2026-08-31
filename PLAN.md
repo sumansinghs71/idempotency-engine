@@ -17,9 +17,9 @@ Four milestones, each with a definition-of-done. The plan stages risk: end-to-en
 **Definition of done.**
 
 - `./gradlew test` runs three integration tests green:
-  - `testHappyPath`
-  - `testDuplicateKeyReturnsCachedResponse`
-  - `testDuplicateKeyDifferentBodyRejects`
+  - `happyPathChargesOnce`
+  - `duplicateKeyReturnsCachedResponse`
+  - `duplicateKeyDifferentBodyRejects`
 - Tests use Testcontainers Postgres.
 
 ## Day 2 — Concurrency
@@ -34,7 +34,7 @@ Four milestones, each with a definition-of-done. The plan stages risk: end-to-en
 
 **Definition of done.**
 
-- `testConcurrentRequestsExecuteOnce` passes: 100 threads, same key, exactly **1** ride row and exactly **1** PSP call observed; all 100 threads receive 201 with the same body (some via direct execution, others via the cache after backing off from 409).
+- `concurrentRequestsExecuteOnce` passes: 100 threads, same key, exactly **1** ride row and exactly **1** PSP call observed; all 100 threads receive 201 with the same body (some via direct execution, others via the cache after backing off from 409).
 - Lock-stale reclaim is exercised by a unit test that mutates `locked_at` to 2 minutes ago and confirms resumption.
 
 ## Day 3 — State machine & recovery
@@ -50,8 +50,9 @@ Four milestones, each with a definition-of-done. The plan stages risk: end-to-en
 
 **Definition of done.**
 
-- `testCrashAfterDbCommitBeforeResponseRecoversCorrectly` — throws at the boundary of `tx3→tx4`, retry resumes and returns the same response.
-- `testCrashDuringExternalApiCallNoDoubleCharge` — kill the JVM-side handler after the PSP returns 200 but before `tx3` commits; retry observes 1 PSP call's idempotency-cache hit and 1 charge row. Assert that `ExternalPaymentClient` saw the same `derivedKey` on both attempts.
+- `f5_crashBeforePsp` — stop after tx2 commits, backdate `locked_at`; the retry resumes at `customer_validated` and calls the PSP exactly once.
+- `f6_crashAfterPsp` — the PSP returns 200 but the process dies before `tx3` commits; the retry reconstructs the same `derivedKey` from the row id, gets the PSP's cache hit, and lands the same `charge_id` on one ride row.
+- `f3_pspSuccessThenDbCommitFailure` — a Postgres trigger aborts the `rides` UPDATE so the PSP genuinely charges and tx3 genuinely rolls back; the retry converges on one charge.
 
 ## Day 4 — Failure injection + docs
 

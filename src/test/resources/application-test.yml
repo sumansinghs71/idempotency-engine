@@ -1,14 +1,32 @@
+# =============================================================================
+# Test profile. The datasource is supplied at runtime by
+# AbstractPostgresIT#registerProps from the singleton Testcontainers Postgres.
+# =============================================================================
 spring:
   jpa:
     hibernate:
+      # Same as the default profile: Flyway owns the schema, Hibernate verifies
+      # the entity mappings against it. This is what catches column-type drift.
       ddl-auto: validate
   flyway:
     enabled: true
+    clean-disabled: true
 
 idempotency:
   ttl: PT24H
-  lock-staleness: PT2S        # short for tests
+  lock-staleness: PT2S        # short, so lock-reclaim paths are cheap to test
   max-key-length: 100
+
+# Park both background timers past the end of any realistic test run. Tests
+# invoke JobDrain#drain() and Reaper#reap() directly instead, so a timer can
+# never delete rows in the middle of an assertion.
+jobs:
+  drain:
+    initial-delay: PT24H
+    interval: PT24H
+  reaper:
+    initial-delay: PT24H
+    interval: PT24H
 
 psp:
   base-url: http://localhost:9999
@@ -17,4 +35,4 @@ psp:
 
 logging:
   level:
-    com.yourname.idempotency: DEBUG
+    io.github.sumansinghs71.idempotency: INFO

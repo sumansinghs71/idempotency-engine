@@ -57,13 +57,13 @@ Gets paged when our duplicate-charge rate is non-zero or when a chaos test detec
 
 | ID | Requirement | Test that proves it |
 |---|---|---|
-| FR-1 | `POST /charges` accepts an `Idempotency-Key` HTTP header. Missing header → `400 Bad Request` with code `idempotency_key_required`. | `testMissingKeyRejects` |
-| FR-2 | Same `(user_id, key)` + same request body + previous request `finished` → return the cached `response_code` and `response_body` byte-identical. No re-execution of side effects. | `testDuplicateKeyReturnsCachedResponse` |
-| FR-3 | Same `(user_id, key)` + *different* request body → `422 Unprocessable Entity` with code `idempotency_key_body_mismatch`. | `testDuplicateKeyDifferentBodyRejects` |
-| FR-4 | Two concurrent requests with the same `(user_id, key)`: exactly one executes the side effects; the other receives `409 Conflict` with code `idempotency_request_in_progress` (and after backoff, eventually the cached response). Race window covered by the row lock + `locked_at` staleness check. | `testConcurrentRequestsExecuteOnce` |
-| FR-5 | Server crash at any of the 8 enumerated failure points (RESEARCH.md §5) followed by a client retry must converge to: customer charged exactly once, response stored, identical body returned. | `testCrashAfterDbCommit*`, `testCrashDuringExternalApiCall*` |
-| FR-6 | Idempotency keys expire after a configurable TTL (default 24h). A request with an expired key is treated as a *new* request: server creates a fresh row (the expired one is purged by the reaper). | `testExpiredKeyAllowsNewRequest` |
-| FR-7 | Keys are scoped per user. The same key string from two different `user_id`s does not collide. Uniqueness constraint is `(user_id, key)`. | `testKeyCollisionAcrossUsersAllowed` |
+| FR-1 | `POST /charges` accepts an `Idempotency-Key` HTTP header. Missing header → `400 Bad Request` with code `idempotency_key_required`. | `missingIdempotencyKeyRejected` |
+| FR-2 | Same `(user_id, key)` + same request body + previous request `finished` → return the cached `response_code` and `response_body` byte-identical. No re-execution of side effects. | `duplicateKeyReturnsCachedResponse` |
+| FR-3 | Same `(user_id, key)` + *different* request body → `422 Unprocessable Entity` with code `idempotency_key_body_mismatch`. | `duplicateKeyDifferentBodyRejects` |
+| FR-4 | Two concurrent requests with the same `(user_id, key)`: exactly one executes the side effects; the other receives `409 Conflict` with code `idempotency_request_in_progress` (and after backoff, eventually the cached response). Race window covered by the row lock + `locked_at` staleness check. | `concurrentRequestsExecuteOnce` |
+| FR-5 | Server crash at any of the 8 enumerated failure points (RESEARCH.md §5) followed by a client retry must converge to: customer charged at most once, response stored, identical body returned. ("At most once", not "exactly once": a client that abandons its request after a crash leaves it uncompleted until the TTL expires it - see README §1.) | `FailureModeTest` F1-F8 (see README §6) |
+| FR-6 | Idempotency keys expire after a configurable TTL (default 24h). A request with an expired key is treated as a *new* request: server creates a fresh row (the expired one is purged by the reaper). | `expiredKeyAllowsNewRequest` |
+| FR-7 | Keys are scoped per user. The same key string from two different `user_id`s does not collide. Uniqueness constraint is `(user_id, key)`. | `keyCollisionAcrossUsersAllowed` |
 
 ## 5. Non-functional requirements
 
@@ -110,7 +110,7 @@ Gets paged when our duplicate-charge rate is non-zero or when a chaos test detec
 - **Cached-response p99 latency:** < 10ms server-side.
 - **Recovery success rate under chaos tests:** 100% across all 8 named failure points.
 - **Reaper backlog:** count of `expired_at < now() - 1h` rows ≤ 1% of total rows at any time.
-- **Concurrency safety:** the `testConcurrentRequestsExecuteOnce` test passes with 100 threads and asserts exactly 1 PSP call and exactly 1 ride row.
+- **Concurrency safety:** the `concurrentRequestsExecuteOnce` test passes with 100 threads and asserts exactly 1 PSP call and exactly 1 ride row.
 
 ## 7. Out of scope / future work
 

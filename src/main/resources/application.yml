@@ -5,18 +5,26 @@ spring:
   application:
     name: idem-engine
   datasource:
-    url: jdbc:postgresql://localhost:5432/vector_store_idem
-    username: ${PG_USERNAME}
-    password: ${DB_PASSWORD}
+    # Defaults match docker-compose.yml exactly, so `docker compose up -d postgres`
+    # followed by `./gradlew bootRun` works with no environment set at all.
+    # Host port 5433, not 5432: the container publishes on a non-default port on
+    # purpose, so a natively installed Postgres already holding 5432 can never be
+    # mistaken for the container. Override any of the three for a real deployment.
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/idempotency}
+    username: ${DB_USERNAME:idem}
+    password: ${DB_PASSWORD:idem}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
       connection-timeout: 2000
   jpa:
     hibernate:
-      # Set to 'none' — let Flyway manage the schema entirely via migrations (V1__schema.sql).
-      # This prevents Hibernate from running validation/DDL before Flyway has a chance to run.
-      ddl-auto: none
+      # 'validate', not 'none'. Flyway owns the schema (V1__schema.sql); Hibernate
+      # never issues DDL. But it does verify at startup that every entity mapping
+      # matches the migrated schema, so a column-type drift fails fast at boot
+      # instead of silently at query time. Flyway's Spring Boot integration runs
+      # before the EntityManagerFactory is initialised, so the tables exist by then.
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
@@ -29,6 +37,11 @@ spring:
             platform: org.hibernate.engine.transaction.jta.platform.internal.NoJtaPlatform
   flyway:
     enabled: true
+    # Versioned migrations only by default. The `dev` profile document at the
+    # bottom of this file appends classpath:db/seed, which holds the
+    # afterMigrate callback that inserts the demo fixtures. Seeding is a Flyway
+    # callback and nothing else, so there is no second seeding path that can
+    # fall out of step with the schema.
     locations: classpath:db/migration
     # Always try to create the schema if it doesn't exist
     create-schemas: true
@@ -36,8 +49,9 @@ spring:
     baseline-on-migrate: true
     # Baseline version to apply when baselining; adjust if your first migration has a different version
     baseline-version: 1
-    # Clean database on startup (WARNING: destructive — only for dev; remove for production!)
-    clean-disabled: false
+    # flyway.clean() drops every object in the schema. Disabled by default so it
+    # can never be triggered accidentally or by a misconfigured deployment.
+    clean-disabled: true
 
 server:
   port: 8080
@@ -67,7 +81,7 @@ management:
 logging:
   level:
     root: INFO
-    com.yourname.idempotency: DEBUG
+    io.github.sumansinghs71.idempotency: DEBUG
     org.hibernate.SQL: WARN
     org.flywaydb: DEBUG
 
@@ -81,3 +95,18 @@ psp:
   base-url: http://localhost:9999   # fake PSP in tests
   timeout-ms: 80000                 # matches Stripe SDK default
 
+---
+# =============================================================================
+# dev profile — local quickstart only
+# =============================================================================
+# Adds the seed location to Flyway. The file it picks up is
+# db/seed/afterMigrate__seed_dev_fixtures.sql, a callback Flyway runs at the end
+# of migrate(), which is what makes the fresh-database order correct by
+# construction: schema first, fixtures second, application context afterwards.
+# `./gradlew bootRun` activates this profile by default (see build.gradle.kts).
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
